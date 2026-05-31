@@ -1,0 +1,18 @@
+# Built-in Android Studio rules
+*.iml
+.gradle
+/local.properties
+/.idea/
+/.kotlin/
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+
+# AI & Internal Tooling
+/skills/
+
+# OS generated files
+.DS_Store
+Thumbs.db
