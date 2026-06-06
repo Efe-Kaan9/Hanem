@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -39,8 +40,10 @@ import coil.compose.AsyncImage
 import com.smartcockpit.data.local.NasaApodEntity
 import com.smartcockpit.data.local.PhraseEntity
 import com.smartcockpit.data.local.PrayerEntity
+import android.util.Log
 import com.smartcockpit.data.local.WeatherEntity
 import com.smartcockpit.ui.theme.*
+import com.airbnb.lottie.compose.*
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -168,15 +171,16 @@ fun DashboardScreen(
                     WeatherKingCard(
                         weather = weather, 
                         prayerTimes = prayerTimes,
-                        pixelOffset = pixelOffset,
-                        textAlpha = textAlpha,
                         currentTime = currentTime.longValue,
                         surfaceColor = dynamicSurface,
                         borderColor = dynamicBorder,
                         primaryTextColor = dynamicPrimaryText,
                         secondaryTextColor = dynamicSecondaryText,
                         dynamicAccent = dynamicAccent,
-                        modifier = Modifier.weight(0.75f).offset(pixelOffset.x, pixelOffset.y)
+                        textAlpha = textAlpha,
+                        modifier = Modifier
+                            .weight(0.75f)
+                            .offset(pixelOffset.x, pixelOffset.y)
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     PrayerTimesRow(
@@ -264,15 +268,17 @@ fun DashboardScreen(
                 WeatherKingCard(
                     weather = weather, 
                     prayerTimes = prayerTimes,
-                    pixelOffset = pixelOffset,
-                    textAlpha = textAlpha,
                     currentTime = currentTime.longValue,
                     surfaceColor = dynamicSurface,
                     borderColor = dynamicBorder,
                     primaryTextColor = dynamicPrimaryText,
                     secondaryTextColor = dynamicSecondaryText,
                     dynamicAccent = dynamicAccent,
-                    modifier = Modifier.fillMaxWidth().wrapContentHeight().offset(pixelOffset.x, pixelOffset.y)
+                    textAlpha = textAlpha,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .offset(pixelOffset.x, pixelOffset.y)
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -353,14 +359,13 @@ fun DashboardScreen(
 fun WeatherKingCard(
     weather: WeatherEntity?, 
     prayerTimes: PrayerEntity?,
-    pixelOffset: DpOffset,
-    textAlpha: Float,
     currentTime: Long,
     surfaceColor: Color,
     borderColor: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
     dynamicAccent: Color,
+    textAlpha: Float,
     modifier: Modifier = Modifier
 ) {
     // 2. REACTIVE HOURLY FORECAST SLIDING WINDOW
@@ -383,8 +388,9 @@ fun WeatherKingCard(
     val isLandscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
     // Unified current hour data from sliding window
-    val currentData = filteredHourly.firstOrNull()
-    val displayTemp = currentData?.first?.toInt()?.toString() ?: weather?.temperature?.toInt()?.toString() ?: "--"
+    val currentNowData = filteredHourly.firstOrNull()
+    val displayWeatherCode = currentNowData?.second ?: weather?.weatherCode ?: 0
+    val displayTemp = currentNowData?.first?.toInt()?.toString() ?: weather?.temperature?.toInt()?.toString() ?: "--"
     
     // Time-aware icon logic for Main Card
     fun parseMinLocal(time: String?): Int {
@@ -401,8 +407,12 @@ fun WeatherKingCard(
         currentHour in 6..20
     }
 
-    val displayCondition = weather?.let { getWeatherDescription(it.weatherCode, isDayNow).condition.uppercase() } ?: "SYNCING..."
-    val displayIcon = weather?.let { getWeatherDescription(it.weatherCode, isDayNow).icon } ?: "☁️"
+    val displayCondition = weather?.let { getWeatherDescription(displayWeatherCode, isDayNow).condition.uppercase() } ?: "SYNCING..."
+
+    // --- ADVANCED CONTRAST ENGINE ---
+    val premiumSunColor = if (isDayNow) Color(0xFFF2C94C) else Color(0xFFF7F4EF)
+    val premiumCloudColor = if (isDayNow) secondaryTextColor.copy(alpha = 0.2f) else Color(0xFF94A3B8).copy(alpha = 0.4f)
+    val premiumRainColor = if (isDayNow) Color(0xFF3B82F6).copy(alpha = 0.6f) else Color(0xFF60A5FA).copy(alpha = 0.5f)
 
     Surface(
         modifier = modifier,
@@ -412,8 +422,15 @@ fun WeatherKingCard(
         shadowElevation = 2.dp
     ) {
         Box(modifier = if (isLandscape) Modifier.fillMaxSize() else Modifier.fillMaxWidth().wrapContentHeight()) {
-            // Dynamic Background Animation
-            WeatherAnimationLayer(weather?.weatherCode ?: 0)
+            // Dynamic Background Animation (Constrained)
+            Box(modifier = Modifier.matchParentSize().alpha(0.6f)) {
+                WeatherAnimationLayer(
+                    code = displayWeatherCode,
+                    sunColor = premiumSunColor,
+                    cloudColor = premiumCloudColor
+                )
+            }
+
 
             Column(
                 modifier = if (isLandscape) Modifier.padding(32.dp).fillMaxSize() 
@@ -425,10 +442,10 @@ fun WeatherKingCard(
                     style = Typography.labelSmall,
                     letterSpacing = 2.sp,
                     color = secondaryTextColor,
-                    modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
+                    modifier = Modifier.alpha(textAlpha)
                 )
                 
-                Spacer(modifier = Modifier.height(if (isLandscape) 24.dp else 12.dp))
+                Spacer(modifier = Modifier.height(if (isLandscape) 28.dp else 12.dp))
 
                 if (isLandscape) {
                     Row(
@@ -436,15 +453,14 @@ fun WeatherKingCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(0.4f)) {
+                        Column(modifier = Modifier.weight(0.4f).alpha(textAlpha)) {
                             Text(
                                 text = "${displayTemp}°",
                                 style = Typography.headlineLarge,
                                 fontSize = 160.sp, 
                                 fontWeight = FontWeight.ExtraLight,
                                 lineHeight = 160.sp,
-                                color = primaryTextColor,
-                                modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
+                                color = primaryTextColor
                             )
                             Text(
                                 text = displayCondition,
@@ -464,12 +480,13 @@ fun WeatherKingCard(
                             }
                         }
 
-                        // Vertical Weekly Forecast
+                        // Vertical Weekly Forecast - SCALED UP
                         Column(
                             modifier = Modifier
-                                .weight(0.3f)
-                                .padding(horizontal = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                .weight(0.35f)
+                                .padding(horizontal = 24.dp)
+                                .alpha(textAlpha),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             weather?.let { w ->
                                 w.dailyTempsMax.take(5).forEachIndexed { index, max ->
@@ -483,8 +500,6 @@ fun WeatherKingCard(
                                         max = max.toInt(),
                                         min = w.dailyTempsMin[index].toInt(),
                                         code = w.dailyWeatherCodes[index],
-                                        pixelOffset = pixelOffset,
-                                        textAlpha = textAlpha,
                                         primaryTextColor = primaryTextColor,
                                         secondaryTextColor = secondaryTextColor
                                     )
@@ -492,28 +507,39 @@ fun WeatherKingCard(
                             }
                         }
                         
-                        Text(
-                            text = displayIcon,
-                            fontSize = 160.sp,
-                            modifier = Modifier.weight(0.3f).padding(end = 16.dp),
-                            textAlign = TextAlign.End
-                        )
+                        // Hero Animation Area - Strictly Constrained
+                        Box(
+                            modifier = Modifier
+                                .weight(0.25f)
+                                .aspectRatio(1f)
+                                .padding(start = 16.dp)
+                                .clipToBounds(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            DynamicWeatherScene(
+                                code = displayWeatherCode,
+                                isDay = isDayNow,
+                                sunColor = premiumSunColor,
+                                cloudColor = premiumCloudColor,
+                                rainColor = premiumRainColor,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 } else {
-                    // PORTRAIT INTERNAL LAYOUT - SURGICALLY OPTIMIZED
+                    // PORTRAIT INTERNAL LAYOUT
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.alpha(textAlpha)) {
                             Text(
                                 text = "${displayTemp}°",
                                 style = Typography.headlineLarge,
                                 fontSize = 100.sp,
                                 fontWeight = FontWeight.ExtraLight,
-                                color = primaryTextColor,
-                                modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
+                                color = primaryTextColor
                             )
                             Text(
                                 text = displayCondition,
@@ -523,39 +549,50 @@ fun WeatherKingCard(
                             )
                         }
                         
-                        Text(
-                            text = displayIcon,
-                            fontSize = 100.sp,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(120.dp)
+                                .clipToBounds()
+                        ) {
+                            DynamicWeatherScene(
+                                code = displayWeatherCode,
+                                isDay = isDayNow,
+                                sunColor = premiumSunColor,
+                                cloudColor = premiumCloudColor,
+                                rainColor = premiumRainColor,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                     
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
                     
-                    // Horizontal Weekly for Portrait - Grouped Tightly
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    // Vertical Weekly for Portrait - Reverted and Scaled
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 48.dp).alpha(textAlpha),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         weather?.let { w ->
                             w.dailyTempsMax.take(4).forEachIndexed { index, max ->
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
-                                ) {
-                                    val dayName = if (index == 0) "Today" else {
-                                        val cal = Calendar.getInstance()
-                                        cal.add(Calendar.DAY_OF_YEAR, index)
-                                        dayFormatter.format(cal.time)
-                                    }
-                                    Text(dayName, style = Typography.labelSmall, color = secondaryTextColor)
-                                    Text(getWeatherDescription(w.dailyWeatherCodes[index]).icon, fontSize = 24.sp)
-                                    Text("${max.toInt()}°", style = Typography.bodySmall, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                                val dayName = if (index == 0) "Today" else {
+                                    val cal = Calendar.getInstance()
+                                    cal.add(Calendar.DAY_OF_YEAR, index)
+                                    dayFormatter.format(cal.time)
                                 }
+                                DailyForecastRowCompact(
+                                    day = dayName,
+                                    max = max.toInt(),
+                                    min = w.dailyTempsMin[index].toInt(),
+                                    code = w.dailyWeatherCodes[index],
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
                             }
                         }
                     }
                 }
+
 
                 if (isLandscape) {
                     Spacer(modifier = Modifier.weight(1f))
@@ -569,11 +606,11 @@ fun WeatherKingCard(
                     style = Typography.labelSmall,
                     letterSpacing = 1.sp,
                     color = secondaryTextColor,
-                    modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha).padding(bottom = if (isLandscape) 24.dp else 12.dp)
+                    modifier = Modifier.padding(bottom = if (isLandscape) 24.dp else 12.dp).alpha(textAlpha)
                 )
                 
                 LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().alpha(textAlpha),
                     horizontalArrangement = Arrangement.SpaceBetween // Spread out to fill horizontal space
                 ) {
                     itemsIndexed(filteredHourly) { index, (temp, code) ->
@@ -597,8 +634,6 @@ fun WeatherKingCard(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .padding(horizontal = 8.dp)
-                                .offset(pixelOffset.x, pixelOffset.y)
-                                .alpha(textAlpha)
                         ) {
                             Text(
                                 if (index == 0) "Now" else "${itemHour}:00", 
@@ -619,13 +654,134 @@ fun WeatherKingCard(
 }
 
 @Composable
+fun DynamicWeatherScene(
+    code: Int,
+    isDay: Boolean,
+    sunColor: Color,
+    cloudColor: Color,
+    rainColor: Color,
+    modifier: Modifier = Modifier
+) {
+    // 1. Localized Retry Engine (Breaks Cache Deadlock)
+    var retryTrigger by remember { mutableIntStateOf(0) }
+
+    // 2. Stabilize the URL composition spec
+    val lottieSpec = remember(code, isDay, retryTrigger) {
+        getMeteoconsUrl(code, isDay)?.let { LottieCompositionSpec.Url(it) }
+    }
+    
+    // 3. Controlled Debug Logging
+    LaunchedEffect(lottieSpec) {
+        lottieSpec?.let {
+            Log.d("WeatherLottie", "Fetching URL: ${(it as LottieCompositionSpec.Url).url} (Retry: $retryTrigger)")
+        }
+    }
+
+    // 4. Optimized Composition Fetch
+    val dummySpec = remember { LottieCompositionSpec.Url("") }
+    val compositionResult = rememberLottieComposition(lottieSpec ?: dummySpec)
+    val composition by compositionResult
+    
+    // 5. Auto-Retry Loop (ONLY fires on failure)
+    LaunchedEffect(compositionResult.isFailure) {
+        if (compositionResult.isFailure) {
+            while (true) {
+                delay(15000) // 15s back-off
+                retryTrigger++
+            }
+        }
+    }
+
+    val progress by animateLottieCompositionAsState(
+        composition = composition,
+        iterations = LottieConstants.IterateForever
+    )
+
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        if (compositionResult.isFailure || lottieSpec == null) {
+            // Log exact failure reason
+            LaunchedEffect(compositionResult.isFailure) {
+                if (compositionResult.isFailure) {
+                    val targetUrl = (lottieSpec as? LottieCompositionSpec.Url)?.url ?: "Unknown"
+                    Log.e("WeatherLottie", "Lottie Failed to load asset from URL: $targetUrl", compositionResult.error)
+                }
+            }
+
+            // Error State: Visible Abstract Gradient (Enhanced for Obsidian)
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(sunColor.copy(alpha = 0.25f), Color.Transparent),
+                        center = center,
+                        radius = size.width / 1.5f
+                    )
+                )
+            }
+        } else if (compositionResult.isLoading) {
+            // Loading State: Pulsating Shimmer
+            val infiniteTransition = rememberInfiniteTransition(label = "LoadingPulse")
+            val pulseAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.05f,
+                targetValue = 0.2f,
+                animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse),
+                label = "Alpha"
+            )
+            val pulseScale by infiniteTransition.animateFloat(
+                initialValue = 0.9f,
+                targetValue = 1.05f,
+                animationSpec = infiniteRepeatable(tween(3000), RepeatMode.Reverse),
+                label = "Scale"
+            )
+
+            Canvas(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)) {
+                drawCircle(
+                    color = sunColor,
+                    alpha = pulseAlpha,
+                    center = center,
+                    radius = size.width / 2
+                )
+            }
+        } else {
+            LottieAnimation(
+                composition = composition,
+                progress = { progress },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+private fun getMeteoconsUrl(code: Int, isDay: Boolean): String? {
+    val baseUrl = "https://cdn.jsdelivr.net/npm/@meteocons/lottie/fill/"
+    val icon = when (code) {
+        0 -> if (isDay) "clear-day.json" else "clear-night.json"
+        1, 2 -> if (isDay) "partly-cloudy-day.json" else "partly-cloudy-night.json"
+        3 -> "overcast.json"
+        45, 48 -> "fog.json"
+        51, 53, 55 -> "drizzle.json"
+        61, 63 -> "rain.json"
+        65 -> "extreme-rain.json"
+        71, 73, 75 -> "snow.json"
+        77 -> "hail.json"
+        80, 81, 82 -> "rain.json"
+        85, 86 -> "snow.json"
+        95 -> "thunderstorms-day.json"
+        96, 99 -> "thunderstorms-extreme.json"
+        else -> null
+    }
+    return icon?.let { baseUrl + it }
+}
+
+
+@Composable
 fun DailyForecastRowCompact(
     day: String, 
     max: Int, 
     min: Int, 
     code: Int,
-    pixelOffset: DpOffset,
-    textAlpha: Float,
     primaryTextColor: Color,
     secondaryTextColor: Color
 ) {
@@ -636,91 +792,107 @@ fun DailyForecastRowCompact(
     ) {
         Text(
             day, 
-            modifier = Modifier.width(50.dp).offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha), 
-            style = Typography.bodyMedium,
+            modifier = Modifier.width(60.dp), 
+            style = Typography.titleMedium,
             fontWeight = FontWeight.Medium,
             color = primaryTextColor
         )
         Text(
             getWeatherDescription(code).icon, 
-            fontSize = 18.sp,
-            modifier = Modifier.alpha(textAlpha)
+            fontSize = 22.sp
         )
         Text(
             "${max}° / ${min}°", 
-            style = Typography.bodyMedium, 
+            style = Typography.titleMedium, 
             color = secondaryTextColor,
-            modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
 
+
 @Composable
-fun BoxScope.WeatherAnimationLayer(code: Int) {
-    val infiniteTransition = rememberInfiniteTransition()
+fun BoxScope.WeatherAnimationLayer(
+    code: Int,
+    sunColor: Color = AccentColor,
+    cloudColor: Color = Color.Gray
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "WeatherBackground")
     
     Box(modifier = Modifier.matchParentSize()) {
         when (code) {
-            0 -> { // Clear Sky - Pulsating Sun Glow
+            0 -> { // Clear Sky
                 val glowAlpha by infiniteTransition.animateFloat(
-                    initialValue = 0.03f,
-                    targetValue = 0.12f,
-                    animationSpec = infiniteRepeatable(tween(4000), RepeatMode.Reverse)
-                )
-                val scale by infiniteTransition.animateFloat(
-                    initialValue = 0.8f,
-                    targetValue = 1.2f,
-                    animationSpec = infiniteRepeatable(tween(6000), RepeatMode.Reverse)
+                    initialValue = 0.04f,
+                    targetValue = 0.15f,
+                    animationSpec = infiniteRepeatable(tween(5000), RepeatMode.Reverse),
+                    label = "GlowAlpha"
                 )
                 
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(AccentColor.copy(alpha = glowAlpha), Color.Transparent),
-                            center = Offset(size.width * 0.8f, size.height * 0.3f),
-                            radius = size.width * 0.5f * scale
+                            colors = listOf(sunColor.copy(alpha = glowAlpha), Color.Transparent),
+                            center = Offset(size.width * 0.85f, size.height * 0.25f),
+                            radius = size.width * 0.6f
                         )
                     )
                 }
             }
-            51, 53, 55, 61, 63, 65, 80, 81, 82 -> { // Rain / Showers
+            1, 2, 3 -> { // Cloudy Background
+                val driftX by infiniteTransition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1500f,
+                    animationSpec = infiniteRepeatable(tween(35000, easing = LinearEasing)),
+                    label = "BgDrift"
+                )
+                Box(modifier = Modifier.fillMaxSize().background(
+                    Brush.horizontalGradient(
+                        colors = listOf(Color.Transparent, cloudColor.copy(0.12f), Color.Transparent),
+                        startX = driftX - 800f,
+                        endX = driftX
+                    )
+                ))
+            }
+            51, 53, 55, 61, 63, 65, 80, 81, 82 -> { // Rain
                 val rainY by infiniteTransition.animateFloat(
                     initialValue = -100f,
                     targetValue = 2000f,
-                    animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing))
+                    animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing)),
+                    label = "BgRain"
                 )
-                Canvas(modifier = Modifier.fillMaxSize().alpha(0.1f)) {
-                    for (i in 0..20) {
-                        val x = (i * 100f) % size.width
-                        val y = (rainY + (i * 50f)) % size.height
+                Canvas(modifier = Modifier.fillMaxSize().alpha(0.08f)) {
+                    for (i in 0..15) {
+                        val x = (i * 120f) % size.width
+                        val y = (rainY + (i * 80f)) % size.height
                         drawLine(
-                            color = PrimaryText,
+                            color = Color.Blue,
                             start = Offset(x, y),
-                            end = Offset(x, y + 20f),
-                            strokeWidth = 2f
+                            end = Offset(x, y + 30f),
+                            strokeWidth = 1.5f
                         )
                     }
                 }
             }
-            else -> { // Default Cloudy/Drifting
-                // Use a large constant or relative fraction for drift if size is not easily accessible here
+            else -> { // Subtle Drift
                 val driftX by infiniteTransition.animateFloat(
                     initialValue = 0f,
                     targetValue = 1000f,
-                    animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing))
+                    animationSpec = infiniteRepeatable(tween(30000, easing = LinearEasing)),
+                    label = "SubtleDrift"
                 )
-                // Just a very subtle gradient drift for low overhead
                 Box(modifier = Modifier.fillMaxSize().background(
                     Brush.horizontalGradient(
-                        colors = listOf(Color.Transparent, PrimaryText.copy(0.02f), Color.Transparent),
+                        colors = listOf(Color.Transparent, cloudColor.copy(0.05f), Color.Transparent),
                         startX = driftX,
-                        endX = driftX + 500f
+                        endX = driftX + 600f
                     )
                 ))
             }
         }
     }
 }
+
 
 @Composable
 fun PrayerTimesRow(
