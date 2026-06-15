@@ -46,10 +46,10 @@ fun AmbientScreen(
 ) {
     val context = LocalContext.current
     val images by viewModel.images.collectAsState()
+    val currentImageIndex by viewModel.currentImageIndex.collectAsState()
     val weather by dashboardViewModel.weather.collectAsState(initial = null)
     val prayerTimes by dashboardViewModel.prayerTimes.collectAsState(initial = null)
     
-    var currentImageIndex by remember { mutableIntStateOf(0) }
     var showGalleryManagement by remember { mutableStateOf(false) }
 
     // 1. TOP-LEVEL SYSTEM CLOCK TICKER
@@ -122,7 +122,8 @@ fun AmbientScreen(
         if (images.isNotEmpty()) {
             while (true) {
                 delay(30000) // 30 seconds for image rotation
-                currentImageIndex = (currentImageIndex + 1) % images.size
+                val nextIndex = if (images.isNotEmpty()) (currentImageIndex + 1) % images.size else 0
+                viewModel.updateImageIndex(nextIndex)
             }
         }
     }

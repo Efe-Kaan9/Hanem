@@ -11,6 +11,7 @@ import com.smartcockpit.data.local.PrayerEntity
 import com.smartcockpit.data.local.dao.NasaDao
 import com.smartcockpit.data.local.dao.PhraseDao
 import com.smartcockpit.data.local.dao.PrayerDao
+import com.smartcockpit.os.KioskManager
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -26,7 +27,8 @@ class DailyUpdateWorker @AssistedInject constructor(
     private val nasaDao: NasaDao,
     private val phraseDao: PhraseDao,
     private val prayerDao: PrayerDao,
-    private val weatherRepository: WeatherRepository
+    private val weatherRepository: WeatherRepository,
+    private val kioskManager: KioskManager
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -102,7 +104,8 @@ class DailyUpdateWorker @AssistedInject constructor(
                 
                 // Only pick a new phrase if the current one is from a previous day
                 if (currentPhrase == null || currentPhrase.lastUpdated < startOfToday) {
-                    val nextIndex = (currentPhrase?.index?.plus(1) ?: 0)
+                    val persistedIndex = kioskManager.phraseIndex.first()
+                    val nextIndex = (currentPhrase?.index?.plus(1) ?: persistedIndex + 1)
                     
                     val jsonString = applicationContext.assets.open("c1_phrases.json").bufferedReader().use { it.readText() }
                     val listType = object : TypeToken<List<Map<String, String>>>() {}.type
@@ -118,6 +121,7 @@ class DailyUpdateWorker @AssistedInject constructor(
                                 lastUpdated = System.currentTimeMillis()
                             )
                         )
+                        kioskManager.savePhraseIndex(nextIndex)
                         println("Lexicon: Updated to new phrase at index $nextIndex")
                     }
                 } else {

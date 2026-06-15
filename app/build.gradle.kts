@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.navigation.compose)
     implementation(libs.work.runtime.ktx)
+    implementation(libs.androidx.datastore.preferences)
 
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
