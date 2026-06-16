@@ -9,6 +9,10 @@ import javax.inject.Singleton
 /**
  * Repository for Weather data.
  * Coordinates between the remote API and the local cache (Room).
+ *
+ * Phase 1 change: Removed default parameter values from refreshWeather() to force
+ * all callers to explicitly pass DataStore-sourced coordinates. There is no longer
+ * a silent fallback to hardcoded lat/lon values at this layer.
  */
 @Singleton
 class WeatherRepository @Inject constructor(
@@ -17,7 +21,7 @@ class WeatherRepository @Inject constructor(
 ) {
     val weather: Flow<WeatherEntity?> = dao.getCachedWeather()
 
-    suspend fun refreshWeather(lat: Double = 38.375, lon: Double = 27.125) {
+    suspend fun refreshWeather(lat: Double, lon: Double) {
         try {
             val response = api.getForecast(lat, lon)
             val entity = WeatherEntity(

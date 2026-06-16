@@ -3,10 +3,12 @@ package com.smartcockpit.ui.screens
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartcockpit.data.remote.WeatherRepository
+import com.smartcockpit.data.remote.PrayerRepository
 import com.smartcockpit.os.DisplayController
 import com.smartcockpit.data.local.dao.NasaDao
 import com.smartcockpit.data.local.dao.PhraseDao
 import com.smartcockpit.data.local.dao.PrayerDao
+import com.smartcockpit.os.KioskManager
 import com.smartcockpit.util.NetworkMonitor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -20,11 +22,13 @@ import javax.inject.Inject
 class DashboardViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val weatherRepository: WeatherRepository,
+    private val prayerRepository: PrayerRepository,
     private val displayController: DisplayController,
     private val nasaDao: NasaDao,
     private val phraseDao: PhraseDao,
     private val prayerDao: PrayerDao,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    private val kioskManager: KioskManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -42,6 +46,7 @@ class DashboardViewModel @Inject constructor(
     val latestApod = nasaDao.getLatestApod()
     val dailyPhrase = phraseDao.getDailyPhrase()
     val prayerTimes = prayerDao.getPrayerTimes()
+    val settings = kioskManager.settings
 
     init {
         // Initial Freshness Check
@@ -61,10 +66,41 @@ class DashboardViewModel @Inject constructor(
         // 2. Midnight Crossing & Periodic Freshness Heartbeat (Every 30 minutes)
         viewModelScope.launch {
             while (true) {
-                delay(30 * 60 * 1000) // Wake up every 30 minutes
+                delay(30 * 60 * 1000)
                 println("Dashboard: Periodic freshness heartbeat check...")
                 checkFreshness()
             }
+        }
+
+        // 3. Reactive Location-Change Cache Invalidation
+        //    Maps to Triple(lat, lon, locationUpdatedAt).
+        //    - locationUpdatedAt is System.currentTimeMillis() written by the new atomic
+        //      updateLocationAndMode(), so every real GPS/manual commit produces a distinct
+        //      Triple even when the physical coordinates have not changed (Bug #2 fix).
+        //    - drop(1) is intentionally REMOVED: on cold boot locationUpdatedAt = 0L,
+        //      which is always distinct from real commit timestamps, so the first
+        //      emission is never a false positive for a location change.
+        viewModelScope.launch {
+            kioskManager.settings
+                .map { Triple(it.latitude, it.longitude, it.locationUpdatedAt) }
+                .distinctUntilChanged()
+                .collect { (lat, lon, _) ->
+                    // Skip the initial DataStore snapshot (timestamp = 0 means no commit yet)
+                    if (lat == 0.0 && lon == 0.0) return@collect
+                    println("Dashboard: Location commit detected ($lat, $lon). Force-refreshing cache...")
+                    try {
+                        weatherRepository.refreshWeather(lat, lon)
+                        println("Dashboard: Weather cache refreshed for new location.")
+                    } catch (e: Exception) {
+                        println("Dashboard: Weather refresh failed after location change: ${e.message}")
+                    }
+                    try {
+                        prayerRepository.refreshPrayerTimes(lat, lon)
+                        println("Dashboard: Prayer cache refreshed for new location.")
+                    } catch (e: Exception) {
+                        println("Dashboard: Prayer refresh failed after location change: ${e.message}")
+                    }
+                }
         }
     }
 
@@ -104,8 +140,10 @@ class DashboardViewModel @Inject constructor(
                 
                 _isApodLoading.value = true
                 
-                // 1. Fetch Weather (Izmir Unified Coordinates)
-                weatherRepository.refreshWeather(38.375, 27.125)
+                // 1. Phase 1 fix: Fetch Weather using DataStore-sourced lat/lon.
+                //    KioskManager provides safe defaults (38.375 / 27.125) if empty.
+                val settingsVal = kioskManager.settings.first()
+                weatherRepository.refreshWeather(settingsVal.latitude, settingsVal.longitude)
                 
                 // 2. Trigger OneTime Sync for the rest (NASA, Prayer, Phrases)
                 val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.smartcockpit.data.remote.DailyUpdateWorker>()

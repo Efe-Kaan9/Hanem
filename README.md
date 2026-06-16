@@ -13,9 +13,9 @@ Hanem is a high-fidelity, highly resilient Smart Home Dashboard designed specifi
 
 ## 🖼️ Visual Experience & Interface Modules
 
-| Landscape Perspective | Night / Deep Sleep |
-| :---: | :---: |
-| ![](./screenshots/Day.png) | ![](./screenshots/Night.png) |
+|    Landscape Perspective     |
+|:----------------------------:|
+| ![](./screenshots/Night.png) |
 
 ### Core Dashboard Modules:
 1. **The Weather King**: A massive, typography-heavy atmospheric display. It features a reactive, 10-hour sliding window forecast that constantly shifts based on the current hour, alongside a 5-day predictive layout.
@@ -23,6 +23,19 @@ Hanem is a high-fidelity, highly resilient Smart Home Dashboard designed specifi
 3. **Daily Digital Art (NASA APOD)**: Fetches the Astronomy Picture of the Day. It includes a smart fallback mechanism and video-filtering to ensure the aesthetic of the frame is never broken.
 4. **English Lexicon**: An idempotent daily vocabulary cache that locks to your local calendar, providing exactly one curated phrase per 24-hour cycle.
 5. **Ultra-Minimal Ambient Mode**: A secondary, distraction-free state designed for pure aesthetics. With a single tap, the detailed telemetry fades away, leaving only a hyper-minimalist digital art frame and a subtle clock. Perfect for serving as a passive room accent while maintaining full Zero-Static pixel protection.
+
+---
+
+## ⚙️ Interactive Dashboard Settings (New)
+
+Forget hardcoding. Hanem now features a powerful, interactive settings panel built directly into the UI (accessible via the Ambient Mode gallery overlay), powered by an atomic `DataStore` engine for persistent configuration:
+
+* **Dual-Engine Location System**: 
+  * **Auto (GPS)**: Utilizes a resilient, multi-layered Google Play Services `FusedLocationProviderClient` with a native `LocationManager` fallback for unstable tablets (Android 12+).
+  * **Manual Search**: A bulletproof manual input field backed by Android's native `Geocoder` to search and lock your exact city if you prefer zero GPS battery drain.
+* **Reactive Cache Invalidation**: The moment you update your location, a reactive `Flow` watcher instantly fires, immediately invalidating stale cache and fetching localized Open-Meteo Weather and Aladhan prayer times.
+* **Visual Theme Control**: Toggle between **Auto** (shifts naturally based on calculated sunset/sunrise times), forced **Light**, or forced **Dark** rendering modes on the fly.
+* **Kiosk Active Hours**: Define custom `Wake` and `Sleep` schedules natively in the UI to manage when the tablet should dim or wake, dramatically extending battery lifespan and preventing screen damage overnight.
 
 ---
 
@@ -52,25 +65,6 @@ Hanem is built for 24/7 uptime in environments with unstable internet. The data 
 
 ---
 
-## ⚙️ Developer Configuration (Action Required)
-
-To run Hanem accurately in your own home, you **must** hardcode your specific geographical coordinates and API keys into the project before building.
-
-1.  **Weather Coordinates**: Open `WeatherRepository.kt` and `DailyUpdateWorker.kt` (or your specific Worker class) and replace the default coordinates with your local latitude and longitude.
-    ```kotlin
-    // Example: Replace with your Latitude and Longitude
-    weatherRepository.refreshWeather(lat = 38.4237, lon = 27.1428) 
-    ```
-2.  **Celestial / Prayer Location**: Open `PrayerApiService.kt` (or your Prayer Repository) and update the parameters to your exact Country and City so the Astro-Dune canvas calculates the sun's trajectory correctly.
-    ```kotlin
-    // Example: Replace with your Country and City
-    @Query("city") city: String = "Izmir",
-    @Query("country") country: String = "Turkey"
-    ```
-3.  **API Keys**: Ensure you have valid keys for OpenWeatherMap and NASA APOD, inserted securely via your `local.properties` or Build Config.
-
----
-
 ## 🛠️ True Kiosk: Hardware Setup Guide
 
 Hanem is designed to turn a general-purpose tablet into a specialized appliance. For the best 24/7 experience, configure your tablet with these hardware-level settings:
@@ -86,13 +80,14 @@ Hanem is designed to turn a general-purpose tablet into a specialized appliance.
 
 ## 🏗️ Technical Stack
 
-* **UI**: 100% Jetpack Compose (Declarative Graphics, Custom Canvas, Animation APIs)
+* **UI**: 100% Jetpack Compose (Declarative Graphics, Custom Canvas, Animation APIs, Material 3)
 * **Architecture**: MVVM + Clean Architecture with Repository Pattern
 * **DI**: Hilt (Dependency Injection)
 * **Concurrency**: Kotlin Coroutines & Flow (Reactive Data Streams)
-* **Persistence**: Room Database (Offline-First approach with destructive migration fallback)
+* **Persistence**: Room Database & DataStore Preferences (Atomic transactions)
 * **Networking**: Retrofit + OkHttp (Custom Logging & Interceptors)
 * **Background Tasks**: WorkManager (Scheduled daily updates & idempotent retries)
+* **Location**: Google Play Services Location API & Native Android Geocoder
 * **Image Loading**: Coil (with HD URI permission persistence)
 
 ---

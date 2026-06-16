@@ -9,7 +9,13 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.smartcockpit.data.remote.DailyUpdateWorker
 import com.smartcockpit.data.remote.WeatherWorker
+import com.smartcockpit.os.KioskManager
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -17,6 +23,12 @@ class HanemApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject
+    lateinit var kioskManager: KioskManager
+
+    // Application-level scope for one-shot DataStore reads at startup
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -26,7 +38,14 @@ class HanemApp : Application(), Configuration.Provider, ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         WeatherWorker.schedule(this)
-        DailyUpdateWorker.schedule(this)
+
+        // Phase 2 fix: Read wakeHour from DataStore before scheduling DailyUpdateWorker
+        // so the initial delay targets the user's configured wake time, not hardcoded 08:00.
+        appScope.launch {
+            val settings = kioskManager.settings.first()
+            val safeWakeHour = settings.wakeHour.takeIf { it in 0..23 } ?: 8
+            DailyUpdateWorker.schedule(this@HanemApp, safeWakeHour)
+        }
     }
 
     override fun newImageLoader(): ImageLoader {

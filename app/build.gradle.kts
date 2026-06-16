@@ -78,6 +78,11 @@ dependencies {
     implementation(libs.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
 
+    // Phase 1: Google Play Services Location for FusedLocationProviderClient (Auto-GPS)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Coroutine adapter for Task.await() used in SettingsViewModel GPS fetch
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     androidTestImplementation(libs.androidx.junit)

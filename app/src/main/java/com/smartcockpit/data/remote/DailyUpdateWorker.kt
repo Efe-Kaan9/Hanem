@@ -39,7 +39,7 @@ class DailyUpdateWorker @AssistedInject constructor(
             } catch (e: Exception) {
                 null
             }
-            
+
             // CRITICAL: Check mediaType of the fresh fetch
             if (apodResponse?.mediaType == "video") {
                 // If today is a video, check if we already have a valid image in cache.
@@ -47,7 +47,7 @@ class DailyUpdateWorker @AssistedInject constructor(
                 if (cachedApod != null && cachedApod.mediaType == "image") {
                     // Cache is an image: Log and retain (Do NOT overwrite)
                     println("NASA APOD: Today is a video. Retaining cached image: ${cachedApod.title}")
-                    apodResponse = null 
+                    apodResponse = null
                 } else {
                     // Cache is also missing/video: Try fetching YESTERDAY as final fallback
                     val calendar = Calendar.getInstance()
@@ -101,16 +101,16 @@ class DailyUpdateWorker @AssistedInject constructor(
                 calendar.set(Calendar.SECOND, 0)
                 calendar.set(Calendar.MILLISECOND, 0)
                 val startOfToday = calendar.timeInMillis
-                
+
                 // Only pick a new phrase if the current one is from a previous day
                 if (currentPhrase == null || currentPhrase.lastUpdated < startOfToday) {
                     val persistedIndex = kioskManager.phraseIndex.first()
                     val nextIndex = (currentPhrase?.index?.plus(1) ?: persistedIndex + 1)
-                    
+
                     val jsonString = applicationContext.assets.open("c1_phrases.json").bufferedReader().use { it.readText() }
                     val listType = object : TypeToken<List<Map<String, String>>>() {}.type
                     val allPhrases: List<Map<String, String>> = Gson().fromJson(jsonString, listType)
-                    
+
                     if (allPhrases.isNotEmpty()) {
                         val selected = allPhrases[nextIndex % allPhrases.size]
                         phraseDao.updatePhrase(
@@ -131,9 +131,12 @@ class DailyUpdateWorker @AssistedInject constructor(
                 e.printStackTrace()
             }
 
-            // 4. Refresh Weather
+            // 4. Phase 1 fix: Refresh Weather with DataStore-sourced coordinates.
+            //    No longer uses hardcoded 38.375, 27.125 — reads from KioskManager
+            //    which provides safe defaults (38.375 / 27.125) if DataStore is empty.
             try {
-                weatherRepository.refreshWeather(38.375, 27.125)
+                val settings = kioskManager.settings.first()
+                weatherRepository.refreshWeather(settings.latitude, settings.longitude)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -146,17 +149,23 @@ class DailyUpdateWorker @AssistedInject constructor(
     }
 
     companion object {
-        fun schedule(context: Context) {
+        /**
+         * Phase 2 fix: The companion object can only accept a Context (no suspend scope).
+         * The wake hour for the initial delay is passed explicitly from HanemApp, which
+         * reads it from DataStore before calling schedule(). Falls back to 08:00.
+         */
+        fun schedule(context: Context, wakeHour: Int = 8) {
+            val safeHour = wakeHour.takeIf { it in 0..23 } ?: 8
             val now = Calendar.getInstance()
             val target = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 8)
+                set(Calendar.HOUR_OF_DAY, safeHour)
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
                 if (before(now)) {
                     add(Calendar.DAY_OF_MONTH, 1)
                 }
             }
-            
+
             val delay = target.timeInMillis - now.timeInMillis
 
             val workRequest = PeriodicWorkRequestBuilder<DailyUpdateWorker>(24, TimeUnit.HOURS)

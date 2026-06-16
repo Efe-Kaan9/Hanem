@@ -25,7 +25,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -57,6 +60,7 @@ fun DashboardScreen(
     val apod by viewModel.latestApod.collectAsState(initial = null)
     val phrase by viewModel.dailyPhrase.collectAsState(initial = null)
     val prayerTimes by viewModel.prayerTimes.collectAsState(initial = null)
+    val settings by viewModel.settings.collectAsState(initial = com.smartcockpit.os.KioskSettings(true, 38.375, 27.125, "", 0L, 8, 0, 23, 0, 0))
     val isApodLoading by viewModel.isApodLoading.collectAsState()
     val isApodError by viewModel.isApodError.collectAsState()
 
@@ -70,21 +74,27 @@ fun DashboardScreen(
     }
 
     // --- HOISTED DAY/NIGHT STATE ---
-    val isDayGlobal = remember(prayerTimes, currentTime.longValue) {
-        fun parseMin(time: String?): Int {
-            if (time == null || time == "--:--") return 0
-            val parts = time.split(":")
-            return if (parts.size >= 2) parts[0].toInt() * 60 + parts[1].toInt() else 0
-        }
-        val cal = Calendar.getInstance().apply { timeInMillis = currentTime.longValue }
-        val currentTotalMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        val sunriseMin = parseMin(prayerTimes?.sunrise)
-        val sunsetMin = parseMin(prayerTimes?.sunset)
-        
-        if (sunriseMin > 0 && sunsetMin > 0) {
-            currentTotalMin in sunriseMin until sunsetMin
-        } else {
-            cal.get(Calendar.HOUR_OF_DAY) in 6..20 // Fallback
+    val isDayGlobal = remember(prayerTimes, currentTime.longValue, settings.themeMode) {
+        when (settings.themeMode) {
+            1 -> true // Force Light
+            2 -> false // Force Dark
+            else -> { // Auto logic
+                fun parseMin(time: String?): Int {
+                    if (time == null || time == "--:--") return 0
+                    val parts = time.split(":")
+                    return if (parts.size >= 2) parts[0].toInt() * 60 + parts[1].toInt() else 0
+                }
+                val cal = Calendar.getInstance().apply { timeInMillis = currentTime.longValue }
+                val currentTotalMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+                val sunriseMin = parseMin(prayerTimes?.sunrise)
+                val sunsetMin = parseMin(prayerTimes?.sunset)
+                
+                if (sunriseMin > 0 && sunsetMin > 0) {
+                    currentTotalMin in sunriseMin until sunsetMin
+                } else {
+                    cal.get(Calendar.HOUR_OF_DAY) in 6..20 // Fallback
+                }
+            }
         }
     }
 
@@ -149,13 +159,48 @@ fun DashboardScreen(
     val dynamicPrimaryText = if (isDayGlobal) PrimaryText else Color(0xFFF3F4F6)
     val dynamicSecondaryText = if (isDayGlobal) SecondaryText else Color(0xFF9CA3AF)
     val dynamicAccent = if (isDayGlobal) AccentColor else Color(0xFF967B61) // Matte Antique Bronze
-    val dynamicSleepText = if (isDayGlobal) PrimaryText else Color(0xFFE5E7EB)
-    val dynamicSleepBorder = if (isDayGlobal) BorderColor else Color(0xFF4B5563)
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
-    Box(modifier = Modifier.fillMaxSize().background(animatedBackgroundColor)) {
+    // Swipe gesture threshold — 80dp converted to px once at composition time
+    val swipeThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(animatedBackgroundColor)
+            // ROOT-LEVEL SWIPE GESTURES
+            // Right-swipe (horizontal dominant, positive X) → Ambient
+            // Up-swipe   (vertical dominant,   negative Y) → Sleep
+            // The LazyRow inside WeatherKingCard consumes its own horizontal
+            // pointer events, so horizontal swipes within the forecast row
+            // scroll the row rather than triggering ambient navigation.
+            .pointerInput(Unit) {
+                var totalDragX = 0f
+                var totalDragY = 0f
+                detectDragGestures(
+                    onDragStart = { _  ->
+                        totalDragX = 0f
+                        totalDragY = 0f
+                    },
+                    onDrag = { _, dragAmount ->
+                        totalDragX += dragAmount.x
+                        totalDragY += dragAmount.y
+                    },
+                    onDragEnd = {
+                        val absX = kotlin.math.abs(totalDragX)
+                        val absY = kotlin.math.abs(totalDragY)
+                        when {
+                            // Horizontal primary + moving right → navigate to Ambient
+                            absX > absY && totalDragX > swipeThresholdPx -> onNavigateToAmbient()
+                            // Vertical primary + moving up (negative Y) → engage Sleep overlay
+                            absY > absX && totalDragY < -swipeThresholdPx -> isSleeping = true
+                        }
+                    }
+                )
+            }
+    ) {
         if (isLandscape) {
             Row(
                 modifier = Modifier
@@ -212,47 +257,22 @@ fun DashboardScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Unified Bottom-Right Block: Stacked Buttons + Time/Date
-                    Row(
+                    // Expanded Clock Area — buttons removed, gestures handle navigation
+                    Box(
                         modifier = Modifier
                             .wrapContentHeight()
                             .fillMaxWidth()
                             .offset(pixelOffset.x, pixelOffset.y),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
+                        contentAlignment = Alignment.BottomEnd
                     ) {
-                        Column(
-                            modifier = Modifier.width(135.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { isSleeping = true },
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                shape = Shapes.medium,
-                                border = BorderStroke(1.dp, dynamicSleepBorder),
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text("SLEEP", style = Typography.labelSmall, color = dynamicSleepText, letterSpacing = 1.5.sp)
-                            }
-
-                            Button(
-                                onClick = onNavigateToAmbient,
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                shape = Shapes.medium,
-                                colors = ButtonDefaults.buttonColors(containerColor = dynamicAccent),
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text("AMBIENT", style = Typography.labelSmall, color = Color.White, letterSpacing = 1.5.sp)
-                            }
-                        }
-
                         CompactClockArea(
                             currentTime = currentTime.longValue,
                             pixelOffset = pixelOffset,
                             textAlpha = textAlpha,
                             primaryTextColor = dynamicPrimaryText,
                             secondaryTextColor = dynamicSecondaryText,
-                            modifier = Modifier
+                            modifier = Modifier.fillMaxWidth(),
+                            timeFontSize = 120.sp
                         )
                     }
                 }
@@ -292,39 +312,22 @@ fun DashboardScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Unified Bottom-Right Block for Portrait
-                Row(
+                // Expanded Clock Area — buttons removed, gestures handle navigation
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .offset(pixelOffset.x, pixelOffset.y),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom // Anchored to bottom baseline
+                    contentAlignment = Alignment.BottomEnd
                 ) {
-                    Column(
-                        modifier = Modifier.width(130.dp), // Unified fixed width
-                        verticalArrangement = Arrangement.spacedBy(12.dp) // Premium breathing room
-                    ) {
-                        OutlinedButton(
-                            onClick = { isSleeping = true },
-                            modifier = Modifier.fillMaxWidth().height(48.dp), // Plumped up height
-                            shape = Shapes.medium,
-                            border = BorderStroke(1.dp, dynamicSleepBorder),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text("SLEEP", style = Typography.labelSmall, color = dynamicSleepText)
-                        }
-                        Button(
-                            onClick = onNavigateToAmbient,
-                            modifier = Modifier.fillMaxWidth().height(48.dp), // Plumped up height
-                            shape = Shapes.medium,
-                            colors = ButtonDefaults.buttonColors(containerColor = dynamicAccent),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text("AMBIENT", style = Typography.labelSmall, color = Color.White)
-                        }
-                    }
-                    
-                    CompactClockArea(currentTime.longValue, pixelOffset, textAlpha, primaryTextColor = dynamicPrimaryText, secondaryTextColor = dynamicSecondaryText, modifier = Modifier)
+                    CompactClockArea(
+                        currentTime = currentTime.longValue,
+                        pixelOffset = pixelOffset,
+                        textAlpha = textAlpha,
+                        primaryTextColor = dynamicPrimaryText,
+                        secondaryTextColor = dynamicSecondaryText,
+                        modifier = Modifier.fillMaxWidth(),
+                        timeFontSize = 120.sp
+                    )
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1029,7 +1032,11 @@ fun PrayerTimesRow(
                         Text(
                             label,
                             style = Typography.labelSmall,
-                            color = if (isDay) secondaryTextColor else Color.White.copy(alpha = 0.5f),
+                            // Local contrast: derived from internal isDay, not the global theme
+                            color = if (isDay)
+                                Color(0xFF1E293B).copy(alpha = 0.7f)
+                            else
+                                Color.White.copy(alpha = 0.5f),
                             letterSpacing = 1.sp,
                             modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
                         )
@@ -1038,7 +1045,11 @@ fun PrayerTimesRow(
                             time,
                             style = Typography.titleLarge,
                             fontFamily = FontFamily.Serif,
-                            color = if (isDay) primaryTextColor else Color.White.copy(alpha = 0.8f),
+                            // Local contrast: derived from internal isDay, not the global theme
+                            color = if (isDay)
+                                Color(0xFF0F172A)
+                            else
+                                Color.White.copy(alpha = 0.8f),
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
                         )
@@ -1191,29 +1202,36 @@ fun CompactClockArea(
     textAlpha: Float,
     primaryTextColor: Color,
     secondaryTextColor: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    timeFontSize: androidx.compose.ui.unit.TextUnit = 76.sp
 ) {
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.ENGLISH) }
     val dayFormat = remember { SimpleDateFormat("EEE", Locale.ENGLISH) }
     val dateFormat = remember { SimpleDateFormat("dd", Locale.ENGLISH) }
-    
+
+    // Sub-text sizes scale proportionally with the main time font
+    val scale = timeFontSize.value / 76f
+    val dayFontSize  = (16f * scale).sp
+    val dateFontSize = (36f * scale).sp
+    val spacerWidth  = (20f * scale).dp
+
     Row(
         modifier = modifier
             .offset(pixelOffset.x, pixelOffset.y)
             .alpha(textAlpha),
-        horizontalArrangement = Arrangement.End, // Changed to End for extreme close proximity
+        horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = timeFormat.format(Date(currentTime)),
             style = Typography.headlineMedium,
             fontWeight = FontWeight.Light,
-            fontSize = 76.sp, // Boşluğu domine edecek heybetli boyut
-            lineHeight = 76.sp, // Dikey hizalamayı bozmaması için
+            fontSize = timeFontSize,
+            lineHeight = timeFontSize,
             color = primaryTextColor
         )
-        
-        Spacer(modifier = Modifier.width(20.dp)) // Rakamlar büyüdüğü için aradaki nefes payı hafif açıldı
+
+        Spacer(modifier = Modifier.width(spacerWidth))
 
         Column(horizontalAlignment = Alignment.End) {
             Text(
@@ -1221,13 +1239,13 @@ fun CompactClockArea(
                 style = Typography.labelSmall,
                 color = secondaryTextColor,
                 letterSpacing = 2.sp,
-                fontSize = 16.sp // Gün ismi belirginleştirildi (14 -> 16)
+                fontSize = dayFontSize
             )
             Text(
                 text = dateFormat.format(Date(currentTime)),
                 style = Typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                fontSize = 36.sp, // Gün rakamı devasa saate uyum sağladı (28 -> 36)
+                fontSize = dateFontSize,
                 color = primaryTextColor
             )
         }

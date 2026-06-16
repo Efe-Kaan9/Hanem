@@ -23,6 +23,7 @@ import com.smartcockpit.ui.screens.DashboardScreen
 import com.smartcockpit.ui.theme.HanemTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.*
@@ -36,7 +37,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         // 1. WAKE THE PHYSICAL SCREEN
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -57,11 +58,16 @@ class MainActivity : ComponentActivity() {
         windowInsetsController.hide(WindowInsetsCompat.Type.statusBars())
         windowInsetsController.hide(WindowInsetsCompat.Type.navigationBars())
 
-        // 2. NATURAL SLEEP ENGINE (Coroutine Flow/Loop)
+        // 2. NATURAL SLEEP ENGINE — Phase 2 fix: proper reactive loop using flow.first()
+        //    instead of the broken nested collect { while(isActive) {} } which never
+        //    re-read updated settings after the first emission.
         startSleepEngine()
 
-        // 3. SCHEDULE MORNING WAKEUP
-        kioskManager.scheduleMorningWakeup()
+        // 3. SCHEDULE MORNING WAKEUP — Phase 2 fix: reads live DataStore values
+        //    instead of the old no-arg call that silently fell back to hardcoded 08:00.
+        lifecycleScope.launch {
+            kioskManager.scheduleMorningWakeupFromDataStore()
+        }
 
         setContent {
             HanemTheme {
@@ -71,15 +77,15 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     NavHost(navController = navController, startDestination = "dashboard") {
-                        composable("dashboard") { 
+                        composable("dashboard") {
                             DashboardScreen(
                                 onNavigateToAmbient = { navController.navigate("ambient") }
-                            ) 
+                            )
                         }
-                        composable("ambient") { 
+                        composable("ambient") {
                             AmbientScreen(
                                 onExit = { navController.popBackStack() }
-                            ) 
+                            )
                         }
                     }
                 }
@@ -87,20 +93,46 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Phase 2 — Fixed Sleep Engine.
+     *
+     * Previous bug: settings.collect { while(isActive) { delay(60s) } }
+     * The inner while loop ran forever on the first settings snapshot and never
+     * picked up DataStore updates. A new coroutine was launched on each emission
+     * but the previous inner while-loop was still spinning, creating a race.
+     *
+     * Fix: Use a flat while(isActive) loop that calls settings.first() on every
+     * iteration. This always fetches the current DataStore value before each
+     * window evaluation, guaranteeing the engine sees live wakeHour/sleepHour.
+     * Safe defaults (8 / 23) are enforced in KioskManager's DataStore map block.
+     */
     private fun startSleepEngine() {
         lifecycleScope.launch {
             while (isActive) {
-                val calendar = Calendar.getInstance()
-                val hour = calendar.get(Calendar.HOUR_OF_DAY)
+                // Always read the freshest snapshot from DataStore before evaluating
+                val settings = kioskManager.settings.first()
 
-                // ACTIVE HOURS: 08:00 to 22:59
-                if (hour in 8..22) {
+                val calendar = Calendar.getInstance()
+                val currentTotalMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+
+                val wakeTotalMinutes = settings.wakeHour * 60 + settings.wakeMinute
+                val sleepTotalMinutes = settings.sleepHour * 60 + settings.sleepMinute
+
+                // ACTIVE CYCLE Logic — supports overnight schedules (e.g. 22:00 → 02:00)
+                val isActiveWindow = if (wakeTotalMinutes < sleepTotalMinutes) {
+                    currentTotalMinutes in wakeTotalMinutes until sleepTotalMinutes
+                } else {
+                    // Spans midnight (e.g. 08:00 → 01:00)
+                    currentTotalMinutes >= wakeTotalMinutes || currentTotalMinutes < sleepTotalMinutes
+                }
+
+                if (isActiveWindow) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 } else {
-                    // SLEEP HOURS: 23:00 to 07:59
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
-                delay(60000) // Check every minute
+
+                delay(60_000L) // Re-evaluate every minute
             }
         }
     }
