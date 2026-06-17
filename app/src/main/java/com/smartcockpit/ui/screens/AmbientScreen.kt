@@ -217,7 +217,11 @@ fun AmbientScreen(
 
         // Premium Settings ModalBottomSheet
         if (showSettings) {
-            val isDark = settings.themeMode != 1  // false = Light mode selected
+            val isDark = when (settings.themeMode) {
+                1    -> false      // Force Light
+                2    -> true       // Force Dark
+                else -> !isDayGlobal  // Auto: dark when it is NOT daytime
+            }
             KioskSettingsSheet(
                 settings = settings,
                 gpsStatus = gpsStatus,
