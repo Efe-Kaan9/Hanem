@@ -159,9 +159,14 @@ class KioskManager @Inject constructor(
             set(Calendar.HOUR_OF_DAY, safeHour)
             set(Calendar.MINUTE, safeMinute)
             set(Calendar.SECOND, 0)
-            if (before(Calendar.getInstance())) {
-                add(Calendar.DAY_OF_YEAR, 1)
-            }
+            set(Calendar.MILLISECOND, 0)  // must zero ms or the guard comparison is unreliable
+        }
+
+        // THE FIX: If the scheduled time has already passed for today (or is exactly now),
+        // push to tomorrow. This prevents AlarmManager from silently dropping a past-time alarm
+        // on fresh install / first launch scenarios (e.g. launched at 18:00 with 08:00 wake time).
+        if (calendar.timeInMillis <= System.currentTimeMillis()) {
+            calendar.add(Calendar.DAY_OF_YEAR, 1)
         }
 
         alarmManager.setExactAndAllowWhileIdle(
