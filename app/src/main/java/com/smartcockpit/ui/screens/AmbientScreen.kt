@@ -31,6 +31,8 @@ import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.VpnKey
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -75,7 +77,8 @@ fun AmbientScreen(
     val currentImageIndex by viewModel.currentImageIndex.collectAsState()
     val weather by dashboardViewModel.weather.collectAsState(initial = null)
     val prayerTimes by dashboardViewModel.prayerTimes.collectAsState(initial = null)
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings = settingsViewModel.settings.collectAsState().value
+        ?: return // AmbientScreen is only shown after the loading gate; null is unreachable in practice
     val gpsStatus by settingsViewModel.gpsStatus.collectAsState()
     val manualGeoStatus by settingsViewModel.manualGeoStatus.collectAsState()
 
@@ -240,9 +243,11 @@ fun AmbientScreen(
                 onResetManualGeoStatus = settingsViewModel::resetManualGeoStatus,
                 onUpdateAutoLocation = settingsViewModel::updateAutoLocation,
                 onUpdateWakeTime = settingsViewModel::updateWakeTime,
-                onUpdateSleepTime = settingsViewModel::updateSleepTime,
-                onUpdateThemeMode = settingsViewModel::updateThemeMode,
-                onResetGpsStatus = settingsViewModel::resetGpsStatus,
+                onUpdateSleepTime = { h, m -> settingsViewModel.updateSleepTime(h, m) },
+                onUpdateThemeMode = { mode -> settingsViewModel.updateThemeMode(mode) },
+                onUpdateNasaApiKey = { key -> settingsViewModel.updateNasaApiKey(key) },
+                onClearNasaApiKey = { settingsViewModel.clearNasaApiKey() },
+                onResetGpsStatus = { settingsViewModel.resetGpsStatus() },
                 onClose = { showSettings = false }
             )
         }
@@ -268,6 +273,8 @@ fun KioskSettingsSheet(
     onUpdateWakeTime: (Int, Int) -> Unit,
     onUpdateSleepTime: (Int, Int) -> Unit,
     onUpdateThemeMode: (Int) -> Unit,
+    onUpdateNasaApiKey: (String) -> Unit,
+    onClearNasaApiKey: () -> Unit,
     onResetGpsStatus: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -455,6 +462,132 @@ fun KioskSettingsSheet(
                         onUpdateAutoLocation = onUpdateAutoLocation,
                         onResetGpsStatus = onResetGpsStatus
                     )
+                }
+
+                // ── D. NASA API CONFIGURATION ─────────────────────────────────
+                PremiumSettingsSection(
+                    title = "NASA API Configuration",
+                    subtitle = "Astronomy Picture of the Day settings",
+                    onSurface = onSurface,
+                    subtleText = subtleText
+                ) {
+                    PremiumNasaApiPanel(
+                        settings = settings,
+                        isDark = isDark,
+                        onSurface = onSurface,
+                        subtleText = subtleText,
+                        onSaveApiKey = onUpdateNasaApiKey,
+                        onClearApiKey = onClearNasaApiKey
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PremiumNasaApiPanel(
+    settings: com.smartcockpit.os.KioskSettings,
+    isDark: Boolean,
+    onSurface: Color,
+    subtleText: Color,
+    onSaveApiKey: (String) -> Unit,
+    onClearApiKey: () -> Unit
+) {
+    var apiKeyInput by remember { mutableStateOf("") }
+    val isCustomKeyActive = settings.nasaApiKey.isNotBlank()
+    val panelBg = if (isDark) Color(0xFF131820) else Color(0xFFF0EBE1)
+    val inputBg = if (isDark) Color(0xFF1A1F2B) else Color.White
+    val borderColor = if (isDark) Color.White.copy(0.1f) else Color(0xFF1A1209).copy(0.1f)
+    
+    // Clear input field when custom key becomes active or inactive externally
+    LaunchedEffect(isCustomKeyActive) {
+        if (isCustomKeyActive) apiKeyInput = ""
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = panelBg,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            if (isCustomKeyActive) {
+                // Active Custom Key State
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.VpnKey, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Custom Key Active", style = Typography.bodyMedium, color = Color(0xFF34D399), fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        val maskedKey = if (settings.nasaApiKey.length > 8) {
+                            "${settings.nasaApiKey.take(4)}••••••••${settings.nasaApiKey.takeLast(4)}"
+                        } else "••••••••"
+                        Text(maskedKey, style = Typography.labelSmall, color = subtleText, letterSpacing = 1.sp)
+                    }
+                    Button(
+                        onClick = onClearApiKey,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF87171).copy(0.15f), contentColor = Color(0xFFF87171)),
+                        elevation = ButtonDefaults.buttonElevation(0.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text("Reset to Demo", style = Typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            } else {
+                // Demo Key / Input State
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Public, contentDescription = null, tint = AccentColor, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Using Default Demo Key", style = Typography.bodyMedium, color = AccentColor, fontWeight = FontWeight.SemiBold)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = apiKeyInput,
+                        onValueChange = { apiKeyInput = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Enter NASA API Key", color = subtleText, style = Typography.bodyMedium) },
+                        singleLine = true,
+                        textStyle = Typography.bodyMedium.copy(color = onSurface),
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = inputBg,
+                            unfocusedContainerColor = inputBg,
+                            focusedBorderColor = AccentColor,
+                            unfocusedBorderColor = borderColor,
+                            cursorColor = AccentColor
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    
+                    Button(
+                        onClick = { if (apiKeyInput.isNotBlank()) onSaveApiKey(apiKeyInput) },
+                        enabled = apiKeyInput.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentColor, 
+                            contentColor = Color(0xFF1A1209),
+                            disabledContainerColor = AccentColor.copy(0.3f),
+                            disabledContentColor = Color(0xFF1A1209).copy(0.3f)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.height(56.dp)
+                    ) {
+                        Text("Save", fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }

@@ -6,10 +6,13 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -20,7 +23,12 @@ import androidx.navigation.compose.rememberNavController
 import com.smartcockpit.os.KioskManager
 import com.smartcockpit.ui.screens.AmbientScreen
 import com.smartcockpit.ui.screens.DashboardScreen
+import com.smartcockpit.ui.screens.OnboardingScreen
+import com.smartcockpit.ui.screens.SettingsViewModel
 import com.smartcockpit.ui.theme.HanemTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -71,12 +79,49 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HanemTheme {
-                val navController = rememberNavController()
+                // ── Activity-scoped SettingsViewModel ────────────────────────
+                val settingsViewModel: SettingsViewModel = hiltViewModel()
+                val settings by settingsViewModel.settings.collectAsState()
+
+                // ── Loading gate ──────────────────────────────────────────────
+                // settings == null means DataStore has not yet emitted its first
+                // value from disk. Showing the NavHost now would use the default
+                // startDestination ("onboarding") and then jump to "dashboard" a
+                // moment later, causing a visible flash. Instead, render a blank
+                // splash that matches the app background and wait for real data.
+                if (settings == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF080C12))
+                    )
+                    return@HanemTheme
+                }
+
+                // ── DataStore value is ready — safe to build the NavHost ──────
+                val startDestination = if (settings!!.isTutorialCompleted) "dashboard" else "onboarding"
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavHost(navController = navController, startDestination = "dashboard") {
+                    val navController = rememberNavController()
+                    NavHost(
+                        navController    = navController,
+                        startDestination = startDestination
+                    ) {
+                        // ── Onboarding (first-launch only) ────────────────────
+                        composable("onboarding") {
+                            OnboardingScreen(
+                                settingsViewModel = settingsViewModel,
+                                onComplete = {
+                                    navController.navigate("dashboard") {
+                                        popUpTo("onboarding") { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
+                        // ── Main app ──────────────────────────────────────────
                         composable("dashboard") {
                             DashboardScreen(
                                 onNavigateToAmbient = { navController.navigate("ambient") }

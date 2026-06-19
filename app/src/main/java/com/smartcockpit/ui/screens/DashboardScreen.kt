@@ -60,7 +60,7 @@ fun DashboardScreen(
     val apod by viewModel.latestApod.collectAsState(initial = null)
     val phrase by viewModel.dailyPhrase.collectAsState(initial = null)
     val prayerTimes by viewModel.prayerTimes.collectAsState(initial = null)
-    val settings by viewModel.settings.collectAsState(initial = com.smartcockpit.os.KioskSettings(true, 38.375, 27.125, "", 0L, 8, 0, 23, 0, 0))
+    val settings by viewModel.settings.collectAsState(initial = com.smartcockpit.os.KioskSettings(true, 38.375, 27.125, "", 0L, 8, 0, 23, 0, 0, false, ""))
     val isApodLoading by viewModel.isApodLoading.collectAsState()
     val isApodError by viewModel.isApodError.collectAsState()
 

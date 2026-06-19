@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.smartcockpit.data.local.dao.NasaDao
+import com.smartcockpit.data.remote.DailyUpdateWorker
 import com.smartcockpit.os.KioskManager
 import com.smartcockpit.os.KioskSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -45,25 +48,21 @@ sealed class ManualGeoStatus {
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val kioskManager: KioskManager,
+    private val nasaDao: NasaDao,
     @ApplicationContext private val appContext: Context   // For Geocoder — no Activity needed
 ) : ViewModel() {
 
-    val settings: StateFlow<KioskSettings> = kioskManager.settings
+    /**
+     * Nullable so the UI can distinguish "DataStore not yet read" (null) from
+     * "DataStore read and tutorial NOT completed" (KioskSettings with isTutorialCompleted=false).
+     * The initial value of null acts as a loading sentinel — the NavHost must not be
+     * initialized until a non-null emission arrives, preventing the onboarding flash.
+     */
+    val settings: StateFlow<KioskSettings?> = kioskManager.settings
         .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = KioskSettings(
-                isAutoLocation      = true,
-                latitude            = 38.375,
-                longitude           = 27.125,
-                locationDisplayName = "",
-                locationUpdatedAt   = 0L,
-                wakeHour            = 8,
-                wakeMinute          = 0,
-                sleepHour           = 23,
-                sleepMinute         = 0,
-                themeMode           = 0
-            )
+            scope        = viewModelScope,
+            started      = SharingStarted.WhileSubscribed(5000),
+            initialValue = null  // null = DataStore disk I/O still in-flight
         )
 
     // ── GPS flow ──────────────────────────────────────────────────────────────
@@ -317,6 +316,30 @@ class SettingsViewModel @Inject constructor(
     fun updateThemeMode(mode: Int) {
         viewModelScope.launch {
             kioskManager.updateSettings { it.copy(themeMode = mode) }
+        }
+    }
+
+    /** Marks the onboarding flow as permanently done. */
+    fun completeTutorial() {
+        viewModelScope.launch {
+            kioskManager.completeTutorial()
+        }
+    }
+
+    fun updateNasaApiKey(newKey: String) {
+        viewModelScope.launch {
+            kioskManager.updateNasaApiKey(newKey)
+            
+            val latest = nasaDao.getLatestApod().firstOrNull()
+            if (latest == null || latest.url.isBlank()) {
+                DailyUpdateWorker.enqueueImmediateWork(appContext)
+            }
+        }
+    }
+
+    fun clearNasaApiKey() {
+        viewModelScope.launch {
+            kioskManager.clearNasaApiKey()
         }
     }
 }

@@ -35,7 +35,9 @@ data class KioskSettings(
     val wakeMinute: Int,
     val sleepHour: Int,
     val sleepMinute: Int,
-    val themeMode: Int // 0: Auto, 1: Light, 2: Dark
+    val themeMode: Int,              // 0: Auto, 1: Light, 2: Dark
+    val isTutorialCompleted: Boolean,// True after the user finishes onboarding once
+    val nasaApiKey: String           // Custom NASA API key, empty means use DEMO_KEY
 )
 
 @Singleton
@@ -59,23 +61,43 @@ class KioskManager @Inject constructor(
     private val SLEEP_HOUR = intPreferencesKey("sleep_hour")
     private val SLEEP_MINUTE = intPreferencesKey("sleep_minute")
     private val THEME_MODE = intPreferencesKey("theme_mode")
+    private val IS_TUTORIAL_COMPLETED = booleanPreferencesKey("is_tutorial_completed")
+    private val NASA_API_KEY = androidx.datastore.preferences.core.stringPreferencesKey("nasa_api_key")
 
     val phraseIndex: Flow<Int> = context.dataStore.data.map { it[PHRASE_INDEX] ?: 0 }
     val ambientImageIndex: Flow<Int> = context.dataStore.data.map { it[AMBIENT_IMAGE_INDEX] ?: 0 }
 
     val settings: Flow<KioskSettings> = context.dataStore.data.map { prefs ->
         KioskSettings(
-            isAutoLocation      = prefs[IS_AUTO_LOCATION]      ?: true,
-            latitude            = prefs[LATITUDE]              ?: DEFAULT_LATITUDE,
-            longitude           = prefs[LONGITUDE]             ?: DEFAULT_LONGITUDE,
-            locationDisplayName = prefs[LOCATION_DISPLAY_NAME] ?: "",
-            locationUpdatedAt   = prefs[LOCATION_UPDATED_AT]   ?: 0L,
-            wakeHour            = prefs[WAKE_HOUR]             ?: 8,
-            wakeMinute          = prefs[WAKE_MINUTE]           ?: 0,
-            sleepHour           = prefs[SLEEP_HOUR]            ?: 23,
-            sleepMinute         = prefs[SLEEP_MINUTE]          ?: 0,
-            themeMode           = prefs[THEME_MODE]            ?: 0
+            isAutoLocation        = prefs[IS_AUTO_LOCATION]      ?: true,
+            latitude              = prefs[LATITUDE]              ?: DEFAULT_LATITUDE,
+            longitude             = prefs[LONGITUDE]             ?: DEFAULT_LONGITUDE,
+            locationDisplayName   = prefs[LOCATION_DISPLAY_NAME] ?: "",
+            locationUpdatedAt     = prefs[LOCATION_UPDATED_AT]   ?: 0L,
+            wakeHour              = prefs[WAKE_HOUR]             ?: 8,
+            wakeMinute            = prefs[WAKE_MINUTE]           ?: 0,
+            sleepHour             = prefs[SLEEP_HOUR]            ?: 23,
+            sleepMinute           = prefs[SLEEP_MINUTE]          ?: 0,
+            themeMode             = prefs[THEME_MODE]            ?: 0,
+            isTutorialCompleted   = prefs[IS_TUTORIAL_COMPLETED] ?: false,
+            nasaApiKey            = prefs[NASA_API_KEY]          ?: ""
         )
+    }
+
+    /**
+     * Called once when the user finishes the onboarding flow.
+     * Atomically persists the flag so the screen is never shown again.
+     */
+    suspend fun completeTutorial() {
+        context.dataStore.edit { it[IS_TUTORIAL_COMPLETED] = true }
+    }
+
+    suspend fun updateNasaApiKey(newKey: String) {
+        context.dataStore.edit { it[NASA_API_KEY] = newKey }
+    }
+
+    suspend fun clearNasaApiKey() {
+        context.dataStore.edit { it[NASA_API_KEY] = "" }
     }
 
     suspend fun savePhraseIndex(index: Int) {

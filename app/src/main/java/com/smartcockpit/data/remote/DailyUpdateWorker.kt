@@ -33,9 +33,12 @@ class DailyUpdateWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         try {
+            val settings = kioskManager.settings.first()
+            val apiKeyToUse = if (settings.nasaApiKey.isNotBlank()) settings.nasaApiKey else "DEMO_KEY"
+
             // 1. Fetch NASA APOD with Video Fallback
             var apodResponse = try {
-                nasaApi.getApod()
+                nasaApi.getApod(apiKey = apiKeyToUse)
             } catch (e: Exception) {
                 null
             }
@@ -54,7 +57,7 @@ class DailyUpdateWorker @AssistedInject constructor(
                     calendar.add(Calendar.DAY_OF_YEAR, -1)
                     val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US)
                     val yesterday = dateFormat.format(calendar.time)
-                    apodResponse = try { nasaApi.getApod(date = yesterday) } catch (e: Exception) { null }
+                    apodResponse = try { nasaApi.getApod(apiKey = apiKeyToUse, date = yesterday) } catch (e: Exception) { null }
                 }
             }
 
@@ -135,7 +138,6 @@ class DailyUpdateWorker @AssistedInject constructor(
             //    No longer uses hardcoded 38.375, 27.125 — reads from KioskManager
             //    which provides safe defaults (38.375 / 27.125) if DataStore is empty.
             try {
-                val settings = kioskManager.settings.first()
                 weatherRepository.refreshWeather(settings.latitude, settings.longitude)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -156,17 +158,22 @@ class DailyUpdateWorker @AssistedInject constructor(
          */
         fun schedule(context: Context, wakeHour: Int = 8) {
             val safeHour = wakeHour.takeIf { it in 0..23 } ?: 8
-            val now = Calendar.getInstance()
+            val nowMillis = System.currentTimeMillis() // Tek ve kesin zaman referansı
+
             val target = Calendar.getInstance().apply {
+                timeInMillis = nowMillis
                 set(Calendar.HOUR_OF_DAY, safeHour)
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
-                if (before(now)) {
-                    add(Calendar.DAY_OF_MONTH, 1)
-                }
+                set(Calendar.MILLISECOND, 0) // Milisaniyeyi kesinlikle sıfırla
             }
 
-            val delay = target.timeInMillis - now.timeInMillis
+            // KioskManager'da kullandığımız o kesin koşul (Geçmiş Zaman Tuzağı Koruması)
+            if (target.timeInMillis <= nowMillis) {
+                target.add(Calendar.DAY_OF_YEAR, 1)
+            }
+
+            val delay = target.timeInMillis - nowMillis
 
             val workRequest = PeriodicWorkRequestBuilder<DailyUpdateWorker>(24, TimeUnit.HOURS)
                 .setInitialDelay(delay, TimeUnit.MILLISECONDS)
@@ -176,6 +183,18 @@ class DailyUpdateWorker @AssistedInject constructor(
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 "daily_8am_update",
                 ExistingPeriodicWorkPolicy.UPDATE,
+                workRequest
+            )
+        }
+
+        fun enqueueImmediateWork(context: Context) {
+            val workRequest = OneTimeWorkRequestBuilder<DailyUpdateWorker>()
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "ImmediateNasaFetch",
+                ExistingWorkPolicy.REPLACE,
                 workRequest
             )
         }
