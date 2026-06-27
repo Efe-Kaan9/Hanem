@@ -5,9 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.smartcockpit.data.remote.WeatherRepository
 import com.smartcockpit.data.remote.PrayerRepository
 import com.smartcockpit.os.DisplayController
+import com.smartcockpit.data.local.dao.GalleryDao
 import com.smartcockpit.data.local.dao.NasaDao
 import com.smartcockpit.data.local.dao.PhraseDao
-import com.smartcockpit.data.local.dao.PrayerDao
 import com.smartcockpit.os.KioskManager
 import com.smartcockpit.util.NetworkMonitor
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,7 +26,7 @@ class DashboardViewModel @Inject constructor(
     private val displayController: DisplayController,
     private val nasaDao: NasaDao,
     private val phraseDao: PhraseDao,
-    private val prayerDao: PrayerDao,
+    private val galleryDao: GalleryDao,
     private val networkMonitor: NetworkMonitor,
     private val kioskManager: KioskManager
 ) : ViewModel() {
@@ -45,8 +45,12 @@ class DashboardViewModel @Inject constructor(
     val weather = weatherRepository.weather
     val latestApod = nasaDao.getLatestApod()
     val dailyPhrase = phraseDao.getDailyPhrase()
-    val prayerTimes = prayerDao.getPrayerTimes()
+    // Mirrors the weather pipeline: reads from the repository's cached Flow,
+    // not directly from the DAO, so the repository remains the single source of truth.
+    val prayerTimes = prayerRepository.prayerTimes
     val settings = kioskManager.settings
+    val galleryImages = galleryDao.getAllImages()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         // Initial Freshness Check
@@ -125,7 +129,7 @@ class DashboardViewModel @Inject constructor(
             val currentWeather = weatherRepository.weather.first()
             val currentApod = nasaDao.getLatestApod().first()
             val currentPhrase = phraseDao.getDailyPhrase().first()
-            val currentPrayer = prayerDao.getPrayerTimes().first()
+            val currentPrayer = prayerRepository.prayerTimes.first()
 
             // Strict Freshness Validation
             val isWeatherStale = currentWeather == null || currentWeather.lastUpdated < startOfToday

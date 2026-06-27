@@ -248,6 +248,7 @@ fun AmbientScreen(
                 onUpdateNasaApiKey = { key -> settingsViewModel.updateNasaApiKey(key) },
                 onClearNasaApiKey = { settingsViewModel.clearNasaApiKey() },
                 onResetGpsStatus = { settingsViewModel.resetGpsStatus() },
+                onUpdateDashboardImageSource = { source -> settingsViewModel.updateDashboardImageSource(source) },
                 onClose = { showSettings = false }
             )
         }
@@ -276,6 +277,7 @@ fun KioskSettingsSheet(
     onUpdateNasaApiKey: (String) -> Unit,
     onClearNasaApiKey: () -> Unit,
     onResetGpsStatus: () -> Unit,
+    onUpdateDashboardImageSource: (com.smartcockpit.os.DashboardImageSource) -> Unit,
     onClose: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -445,7 +447,7 @@ fun KioskSettingsSheet(
                 // ── C. LOCATION ENGINE ────────────────────────────────────────
                 PremiumSettingsSection(
                     title = "Location Engine",
-                    subtitle = "Coordinates feed the Open-Meteo weather API",
+                    subtitle = "Set your city to get accurate weather & day times",
                     onSurface = onSurface,
                     subtleText = subtleText
                 ) {
@@ -478,6 +480,23 @@ fun KioskSettingsSheet(
                         subtleText = subtleText,
                         onSaveApiKey = onUpdateNasaApiKey,
                         onClearApiKey = onClearNasaApiKey
+                    )
+                }
+
+                // ── E. DASHBOARD IMAGE SOURCE ──────────────────────────────────
+                PremiumSettingsSection(
+                    title = "Dashboard Image Source",
+                    subtitle = "Choose what appears in the art card",
+                    onSurface = onSurface,
+                    subtleText = subtleText
+                ) {
+                    DashboardImageSourcePanel(
+                        selected = settings.dashboardImageSource,
+                        isDark = isDark,
+                        onSurface = onSurface,
+                        subtleText = subtleText,
+                        separatorClr = separatorClr,
+                        onSelect = onUpdateDashboardImageSource
                     )
                 }
             }
@@ -588,6 +607,108 @@ fun PremiumNasaApiPanel(
                     ) {
                         Text("Save", fontWeight = FontWeight.SemiBold)
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DashboardImageSourcePanel(
+    selected: com.smartcockpit.os.DashboardImageSource,
+    isDark: Boolean,
+    onSurface: Color,
+    subtleText: Color,
+    separatorClr: Color,
+    onSelect: (com.smartcockpit.os.DashboardImageSource) -> Unit
+) {
+    val panelBg     = if (isDark) Color(0xFF131820) else Color(0xFFF0EBE1)
+    val borderColor = if (isDark) Color.White.copy(0.1f) else Color(0xFF1A1209).copy(0.1f)
+    val activeAccent = AccentColor
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = panelBg,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Column(modifier = Modifier.padding(4.dp)) {
+            // ── NASA APOD option ───────────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onSelect(com.smartcockpit.os.DashboardImageSource.NASA_APOD) }
+                    .padding(horizontal = 12.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = selected == com.smartcockpit.os.DashboardImageSource.NASA_APOD,
+                    onClick = { onSelect(com.smartcockpit.os.DashboardImageSource.NASA_APOD) },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = activeAccent,
+                        unselectedColor = subtleText
+                    )
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "NASA APOD",
+                        style = Typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (selected == com.smartcockpit.os.DashboardImageSource.NASA_APOD) activeAccent else onSurface
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "Fetches the Astronomy Picture of the Day. Adding your personal API Key is recommended to avoid rate limits.",
+                        style = Typography.labelSmall,
+                        color = subtleText,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+
+            // Thin divider
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .height(1.dp)
+                    .background(separatorClr)
+            )
+
+            // ── LOCAL GALLERY option ───────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onSelect(com.smartcockpit.os.DashboardImageSource.LOCAL_GALLERY) }
+                    .padding(horizontal = 12.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = selected == com.smartcockpit.os.DashboardImageSource.LOCAL_GALLERY,
+                    onClick = { onSelect(com.smartcockpit.os.DashboardImageSource.LOCAL_GALLERY) },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = activeAccent,
+                        unselectedColor = subtleText
+                    )
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "Local Gallery",
+                        style = Typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (selected == com.smartcockpit.os.DashboardImageSource.LOCAL_GALLERY) activeAccent else onSurface
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "Rotates your personal Ambient Mode images in the dashboard widget at regular intervals. Fully offline.",
+                        style = Typography.labelSmall,
+                        color = subtleText,
+                        lineHeight = 16.sp
+                    )
                 }
             }
         }

@@ -21,6 +21,9 @@ import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "kiosk_prefs")
 
+// Determines what image appears in the Dashboard art card.
+enum class DashboardImageSource { NASA_APOD, LOCAL_GALLERY }
+
 // Default safe fallback coordinates — İzmir, Turkey
 private const val DEFAULT_LATITUDE = 38.375
 private const val DEFAULT_LONGITUDE = 27.125
@@ -37,7 +40,8 @@ data class KioskSettings(
     val sleepMinute: Int,
     val themeMode: Int,              // 0: Auto, 1: Light, 2: Dark
     val isTutorialCompleted: Boolean,// True after the user finishes onboarding once
-    val nasaApiKey: String           // Custom NASA API key, empty means use DEMO_KEY
+    val nasaApiKey: String,          // Custom NASA API key, empty means use DEMO_KEY
+    val dashboardImageSource: DashboardImageSource // NASA_APOD or LOCAL_GALLERY
 )
 
 @Singleton
@@ -63,6 +67,7 @@ class KioskManager @Inject constructor(
     private val THEME_MODE = intPreferencesKey("theme_mode")
     private val IS_TUTORIAL_COMPLETED = booleanPreferencesKey("is_tutorial_completed")
     private val NASA_API_KEY = androidx.datastore.preferences.core.stringPreferencesKey("nasa_api_key")
+    private val DASHBOARD_IMAGE_SOURCE = intPreferencesKey("dashboard_image_source") // 0 = NASA_APOD, 1 = LOCAL_GALLERY
 
     val phraseIndex: Flow<Int> = context.dataStore.data.map { it[PHRASE_INDEX] ?: 0 }
     val ambientImageIndex: Flow<Int> = context.dataStore.data.map { it[AMBIENT_IMAGE_INDEX] ?: 0 }
@@ -80,7 +85,11 @@ class KioskManager @Inject constructor(
             sleepMinute           = prefs[SLEEP_MINUTE]          ?: 0,
             themeMode             = prefs[THEME_MODE]            ?: 0,
             isTutorialCompleted   = prefs[IS_TUTORIAL_COMPLETED] ?: false,
-            nasaApiKey            = prefs[NASA_API_KEY]          ?: ""
+            nasaApiKey            = prefs[NASA_API_KEY]          ?: "",
+            dashboardImageSource  = if ((prefs[DASHBOARD_IMAGE_SOURCE] ?: 0) == 1)
+                                        DashboardImageSource.LOCAL_GALLERY
+                                    else
+                                        DashboardImageSource.NASA_APOD
         )
     }
 
@@ -98,6 +107,12 @@ class KioskManager @Inject constructor(
 
     suspend fun clearNasaApiKey() {
         context.dataStore.edit { it[NASA_API_KEY] = "" }
+    }
+
+    suspend fun updateDashboardImageSource(source: DashboardImageSource) {
+        context.dataStore.edit {
+            it[DASHBOARD_IMAGE_SOURCE] = if (source == DashboardImageSource.LOCAL_GALLERY) 1 else 0
+        }
     }
 
     suspend fun savePhraseIndex(index: Int) {

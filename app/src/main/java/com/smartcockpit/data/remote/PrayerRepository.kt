@@ -21,6 +21,13 @@ class PrayerRepository @Inject constructor(
     private val dao: PrayerDao
 ) {
     /**
+     * Live Room stream of the locally cached prayer times — mirrors
+     * [WeatherRepository.weather] so the ViewModel only reads from one
+     * authoritative repository layer.
+     */
+    val prayerTimes: kotlinx.coroutines.flow.Flow<PrayerEntity?> = dao.getPrayerTimes()
+
+    /**
      * Force-fetches prayer times for [lat]/[lon] and atomically overwrites
      * the local Room cache. Uses the Aladhan v1/timings/{date} endpoint so
      * times are accurate for the new geographic position.

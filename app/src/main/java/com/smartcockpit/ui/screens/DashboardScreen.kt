@@ -28,6 +28,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -41,7 +42,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.smartcockpit.data.local.NasaApodEntity
-import com.smartcockpit.data.local.PhraseEntity
 import com.smartcockpit.data.local.PrayerEntity
 import android.util.Log
 import com.smartcockpit.data.local.WeatherEntity
@@ -58,11 +58,34 @@ fun DashboardScreen(
 ) {
     val weather by viewModel.weather.collectAsState(initial = null)
     val apod by viewModel.latestApod.collectAsState(initial = null)
-    val phrase by viewModel.dailyPhrase.collectAsState(initial = null)
     val prayerTimes by viewModel.prayerTimes.collectAsState(initial = null)
-    val settings by viewModel.settings.collectAsState(initial = com.smartcockpit.os.KioskSettings(true, 38.375, 27.125, "", 0L, 8, 0, 23, 0, 0, false, ""))
+    val settings by viewModel.settings.collectAsState(
+        initial = com.smartcockpit.os.KioskSettings(
+            true, 38.375, 27.125, "", 0L, 8, 0, 23, 0, 0, false, "",
+            com.smartcockpit.os.DashboardImageSource.NASA_APOD
+        )
+    )
+    val galleryImages by viewModel.galleryImages.collectAsState()
     val isApodLoading by viewModel.isApodLoading.collectAsState()
     val isApodError by viewModel.isApodError.collectAsState()
+
+    val context = LocalContext.current
+
+    // Today's history entry — read from assets/history.json once per composition
+    val todayHistory = remember { com.smartcockpit.util.HistoryDictionary.forToday(context) }
+
+    // Cycling index for LOCAL_GALLERY source (30-second rotation)
+    var localGalleryIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(settings.dashboardImageSource, galleryImages.size) {
+        if (settings.dashboardImageSource == com.smartcockpit.os.DashboardImageSource.LOCAL_GALLERY
+            && galleryImages.isNotEmpty()
+        ) {
+            while (true) {
+                delay(30_000L)
+                localGalleryIndex = (localGalleryIndex + 1) % galleryImages.size
+            }
+        }
+    }
 
     // 1. TOP-LEVEL SYSTEM CLOCK TICKER (1-second)
     val currentTime = remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -98,12 +121,6 @@ fun DashboardScreen(
         }
     }
 
-    // Reset loading state if data arrives
-    LaunchedEffect(apod, phrase, prayerTimes) {
-        if (apod != null && phrase != null && prayerTimes != null) {
-            // Internal logic to signal complete readiness if needed
-        }
-    }
 
     var isSleeping by remember { mutableStateOf(false) }
 
@@ -134,8 +151,8 @@ fun DashboardScreen(
     // Background Tone Oscillation Logic (5-minute cycle)
     val colorTransition = rememberInfiniteTransition(label = "DashboardOscillation")
     val animatedBackgroundColor by colorTransition.animateColor(
-        initialValue = if (isDayGlobal) Color(0xFFFDFBF7) else Color(0xFF0A0E17),
-        targetValue = if (isDayGlobal) Color(0xFFFAF5EC) else Color(0xFF111622),
+        initialValue = if (isDayGlobal) Color(0xFFF5EFE6) else Color(0xFF0A0E17),
+        targetValue = if (isDayGlobal) Color(0xFFEBE3D5) else Color(0xFF111622),
         animationSpec = infiniteRepeatable(
             animation = tween(300000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
@@ -144,8 +161,8 @@ fun DashboardScreen(
     )
 
     val animatedSurfaceColor by colorTransition.animateColor(
-        initialValue = if (isDayGlobal) Surface else Color(0xFF161B26),
-        targetValue = if (isDayGlobal) Color(0xFFF8F5EE) else Color(0xFF1C2230),
+        initialValue = if (isDayGlobal) Color(0xFFF5EFE6) else Color(0xFF161B26),
+        targetValue = if (isDayGlobal) Color(0xFFEBE3D5) else Color(0xFF1C2230),
         animationSpec = infiniteRepeatable(
             animation = tween(300000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
@@ -249,11 +266,34 @@ fun DashboardScreen(
                         .weight(0.35f)
                         .fillMaxHeight()
                 ) {
-                    FramedApodCard(apod, isApodLoading, isApodError, pixelOffset, textAlpha, surfaceColor = dynamicSurface, borderColor = dynamicBorder, secondaryTextColor = dynamicSecondaryText, modifier = Modifier.weight(1f).offset(pixelOffset.x, pixelOffset.y))
+                    DynamicImageCard(
+                        apod = apod,
+                        isApodLoading = isApodLoading,
+                        isApodError = isApodError,
+                        imageSource = settings.dashboardImageSource,
+                        galleryImages = galleryImages,
+                        localGalleryIndex = localGalleryIndex,
+                        pixelOffset = pixelOffset,
+                        textAlpha = textAlpha,
+                        surfaceColor = dynamicSurface,
+                        borderColor = dynamicBorder,
+                        secondaryTextColor = dynamicSecondaryText,
+                        modifier = Modifier.weight(1f).offset(pixelOffset.x, pixelOffset.y)
+                    )
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    ElegantPhraseCard(phrase, pixelOffset, textAlpha, surfaceColor = dynamicSurface, borderColor = dynamicBorder, primaryTextColor = dynamicPrimaryText, secondaryTextColor = dynamicSecondaryText, accentColor = dynamicAccent, modifier = Modifier.wrapContentHeight().offset(pixelOffset.x, pixelOffset.y))
+                    ElegantHistoryCard(
+                        historyText = todayHistory,
+                        pixelOffset = pixelOffset,
+                        textAlpha = textAlpha,
+                        surfaceColor = dynamicSurface,
+                        borderColor = dynamicBorder,
+                        primaryTextColor = dynamicPrimaryText,
+                        secondaryTextColor = dynamicSecondaryText,
+                        accentColor = dynamicAccent,
+                        modifier = Modifier.wrapContentHeight().offset(pixelOffset.x, pixelOffset.y)
+                    )
 
                     Spacer(modifier = Modifier.height(24.dp))
 
@@ -305,9 +345,32 @@ fun DashboardScreen(
                 
                 // MIDDLE: Art & Learning (Stacked)
                 Row(modifier = Modifier.weight(0.30f).offset(pixelOffset.x, pixelOffset.y)) {
-                    FramedApodCard(apod, isApodLoading, isApodError, pixelOffset, textAlpha, surfaceColor = dynamicSurface, borderColor = dynamicBorder, secondaryTextColor = dynamicSecondaryText, modifier = Modifier.weight(0.6f).fillMaxHeight())
+                    DynamicImageCard(
+                        apod = apod,
+                        isApodLoading = isApodLoading,
+                        isApodError = isApodError,
+                        imageSource = settings.dashboardImageSource,
+                        galleryImages = galleryImages,
+                        localGalleryIndex = localGalleryIndex,
+                        pixelOffset = pixelOffset,
+                        textAlpha = textAlpha,
+                        surfaceColor = dynamicSurface,
+                        borderColor = dynamicBorder,
+                        secondaryTextColor = dynamicSecondaryText,
+                        modifier = Modifier.weight(0.6f).fillMaxHeight()
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
-                    ElegantPhraseCard(phrase, pixelOffset, textAlpha, surfaceColor = dynamicSurface, borderColor = dynamicBorder, primaryTextColor = dynamicPrimaryText, secondaryTextColor = dynamicSecondaryText, accentColor = dynamicAccent, modifier = Modifier.weight(0.4f).fillMaxHeight())
+                    ElegantHistoryCard(
+                        historyText = todayHistory,
+                        pixelOffset = pixelOffset,
+                        textAlpha = textAlpha,
+                        surfaceColor = dynamicSurface,
+                        borderColor = dynamicBorder,
+                        primaryTextColor = dynamicPrimaryText,
+                        secondaryTextColor = dynamicSecondaryText,
+                        accentColor = dynamicAccent,
+                        modifier = Modifier.weight(0.4f).fillMaxHeight()
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1146,8 +1209,73 @@ fun FramedApodCard(
 }
 
 @Composable
-fun ElegantPhraseCard(
-    phrase: PhraseEntity?, 
+fun DynamicImageCard(
+    apod: NasaApodEntity?,
+    isApodLoading: Boolean,
+    isApodError: Boolean,
+    imageSource: com.smartcockpit.os.DashboardImageSource,
+    galleryImages: List<com.smartcockpit.data.local.GalleryEntity>,
+    localGalleryIndex: Int,
+    pixelOffset: DpOffset,
+    textAlpha: Float,
+    surfaceColor: Color,
+    borderColor: Color,
+    secondaryTextColor: Color,
+    modifier: Modifier = Modifier
+) {
+    if (imageSource == com.smartcockpit.os.DashboardImageSource.LOCAL_GALLERY && galleryImages.isNotEmpty()) {
+        val safeIndex = localGalleryIndex.coerceIn(0, galleryImages.size - 1)
+        val uri = galleryImages[safeIndex].imageUri
+        val infiniteTransition = rememberInfiniteTransition(label = "LocalGalleryMotion")
+        val scale by infiniteTransition.animateFloat(
+            initialValue = 1.0f,
+            targetValue = 1.02f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(45000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "LocalMicroScale"
+        )
+        Surface(
+            modifier = modifier.fillMaxWidth(),
+            color = surfaceColor,
+            shape = Shapes.large,
+            border = BorderStroke(1.dp, borderColor),
+            shadowElevation = 4.dp
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                androidx.compose.animation.Crossfade(
+                    targetState = uri, 
+                    animationSpec = tween(1500, easing = LinearEasing),
+                    label = "GalleryCrossfade"
+                ) { targetUri ->
+                    AsyncImage(
+                        model = targetUri,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+        }
+    } else {
+        FramedApodCard(
+            apod = apod,
+            isLoading = isApodLoading,
+            isError = isApodError,
+            pixelOffset = pixelOffset,
+            textAlpha = textAlpha,
+            surfaceColor = surfaceColor,
+            borderColor = borderColor,
+            secondaryTextColor = secondaryTextColor,
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
+fun ElegantHistoryCard(
+    historyText: String,
     pixelOffset: DpOffset,
     textAlpha: Float,
     surfaceColor: Color,
@@ -1164,31 +1292,25 @@ fun ElegantPhraseCard(
         border = BorderStroke(1.dp, borderColor)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp), // Slightly tighter
+            modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                "DAILY LEXICON", 
-                style = Typography.labelSmall, 
+                "ON THIS DAY",
+                style = Typography.labelSmall,
                 color = secondaryTextColor,
                 modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                phrase?.en ?: "Loading perspective...",
-                style = Typography.headlineSmall, // Smaller for compression
-                lineHeight = 28.sp,
+                historyText,
+                style = Typography.headlineSmall,
+                fontSize = 18.sp,
+                lineHeight = 24.sp,
                 fontFamily = FontFamily.Serif,
                 color = primaryTextColor,
-                modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                phrase?.tr ?: "",
-                style = Typography.bodyMedium,
-                color = accentColor,
-                fontFamily = FontFamily.Serif,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.offset(pixelOffset.x, pixelOffset.y).alpha(textAlpha)
             )
         }

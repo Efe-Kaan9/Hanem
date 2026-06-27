@@ -95,37 +95,37 @@ data class TutorialPage(
 
 private val tutorialPages = listOf(
     TutorialPage(
-        imageRes    = R.drawable.img1,
+        imageRes    = R.drawable.img2,
         title       = "Smart Dashboard",
         description = "Daily NASA imagery, C1 English phrases, and real-time weather at a glance. Swipe left to enter Ambient Mode",
         gesture     = OnboardingGesture.SWIPE_LEFT
     ),
     TutorialPage(
-        imageRes    = R.drawable.img2,
+        imageRes    = R.drawable.img3,
         title       = "Ambient Gallery",
         description = "Tap the screen to manage your personal photo gallery and settings.",
         gesture     = OnboardingGesture.TAP_CENTER
     ),
     TutorialPage(
-        imageRes    = R.drawable.img3,
+        imageRes    = R.drawable.img4,
         title       = "System Settings",
         description = "Tap the gear icon in Ambient Mode to configure Wake/Sleep schedules and GPS. Click on exit button to return to main page.",
         gesture     = OnboardingGesture.TAP_SETTINGS_ICON
     ),
     TutorialPage(
-        imageRes    = R.drawable.img4,
+        imageRes    = R.drawable.img5,
         title       = "System configuration",
         description = "Configure the system to adapt to you, enter your Nasa api key which you can take from https://api.nasa.gov/ for free for uninterrupted access.",
         gesture     = OnboardingGesture.NONE
     ),
     TutorialPage(
-        imageRes    = R.drawable.img5,
+        imageRes    = R.drawable.img6,
         title       = "OLED Sleep Mode",
         description = "Swipe up from the dashboard to enter deep sleep. Recommended to prevent pixel burn-in.",
         gesture     = OnboardingGesture.SWIPE_UP
     ),
     TutorialPage(
-        imageRes    = R.drawable.img6,
+        imageRes    = R.drawable.img7,
         title       = "Exit OLED Sleep Mode",
         description = "Tap the screen to exit sleep mode.",
         gesture     = OnboardingGesture.TAP_CENTER

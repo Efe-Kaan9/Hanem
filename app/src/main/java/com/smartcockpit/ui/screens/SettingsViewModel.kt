@@ -10,6 +10,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.smartcockpit.data.local.dao.NasaDao
 import com.smartcockpit.data.remote.DailyUpdateWorker
+import com.smartcockpit.os.DashboardImageSource
 import com.smartcockpit.os.KioskManager
 import com.smartcockpit.os.KioskSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -340,6 +341,12 @@ class SettingsViewModel @Inject constructor(
     fun clearNasaApiKey() {
         viewModelScope.launch {
             kioskManager.clearNasaApiKey()
+        }
+    }
+
+    fun updateDashboardImageSource(source: DashboardImageSource) {
+        viewModelScope.launch {
+            kioskManager.updateDashboardImageSource(source)
         }
     }
 }
